@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+/*
+ * Palette placeholders — swap these values once the palette is decided.
+ * Each --color-* token becomes a Tailwind utility, e.g. bg-surface, text-muted, border-border.
+ */
+@theme {
+  --color-background: #ffffff;
+  --color-foreground: #0a0a0a;
+
+  --color-surface: #f5f5f5;
+  --color-border: #e5e5e5;
+  --color-muted: #737373;
+
+  --color-primary: #171717;
+  --color-primary-foreground: #fafafa;
+
+  --color-danger: #dc2626;
+}
+
+body {
+  @apply bg-background text-foreground antialiased;
+}
