@@ -1,5 +1,4 @@
-# GitHub Analyser
-[Live Demo](https://github-analyser-vert.vercel.app/)
+# GitHub Analyser [Live Demo](https://github-analyser-vert.vercel.app/)
 An AI agent that reads a GitHub repository and writes a plain-text analysis of it. Paste a repo URL and the agent, powered by Google Gemini, decides which files to read, fetches them from the GitHub API, and keeps going until it has enough context to explain what the project is, how it's built, and anything notable about it.
 
 ## How it works
