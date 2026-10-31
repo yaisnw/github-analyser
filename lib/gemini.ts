@@ -1,22 +1,29 @@
 import { ApiError, Content, FunctionCall, GoogleGenAI, Part, Type } from "@google/genai";
-import { githubHeaders } from "@/lib/github";
+import { AnalysisError } from "@/lib/errors";
+import { fetchProfileData, githubHeaders } from "@/lib/github";
 
 const MODEL = process.env.GEMINI_MODEL || "gemini-flash-lite-latest";
 const MAX_STEPS = 10;
 const STEP_TIMEOUT_MS = 30_000;
 const MIN_REQUEST_INTERVAL_MS = 12_000;
-const SYSTEM_INSTRUCTION =
+const PLAIN_TEXT_RULES =
   "Write your final answer as plain text only. Do not use Markdown or any rich text formatting: " +
   "no headings (#), bold or italics (* or _), backticks, code blocks, tables or links. " +
   "Use short paragraphs, and plain hyphens at the start of a line for lists.";
+const REPO_INSTRUCTION =
+  `${PLAIN_TEXT_RULES} Start by calling list_repo_files to see the project layout instead of guessing file paths.`;
+const PROFILE_INSTRUCTION =
+  `${PLAIN_TEXT_RULES} You are analysing a GitHub user from public data. ` +
+  "You are given their profile data up front. Use tools only to look closer at at most 3 of their most " +
+  "telling repos (call list_repo_files, then fetch_file for a README or key source file), because each step is expensive. " +
+  "Base every claim on evidence in the data, and judge their public work, not their personal traits. " +
+  "Say clearly when data is missing or private contributions are hidden. " +
+  "Cover, in short paragraphs: what kind of developer they are, main languages and stack, activity and consistency (from contribution totals and repo push dates), " +
+  "solo vs collaborative work (pull requests and reviews show collaboration), quality signals such as tests, CI and documentation, " +
+  "strengths, and what the public data cannot tell us.";
 const MAX_FILE_CHARS = 20_000;
-
-export class AnalysisError extends Error {
-  constructor(message: string, public status = 500) {
-    super(message);
-    this.name = "AnalysisError";
-  }
-}
+const MAX_LISTED_FILES = 300;
+const IGNORED_PATH = /(^|\/)(node_modules|dist|build|\.next|vendor|\.git)\/|(package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$|\.(png|jpe?g|gif|svg|ico|woff2?|ttf|mp4|pdf|zip|lock)$/i;
 
 let client: GoogleGenAI | null = null;
 
@@ -108,36 +115,76 @@ async function runTool(call: FunctionCall): Promise<Part> {
           ? { content: text.slice(0, MAX_FILE_CHARS), truncated: true }
           : { content: text };
       }
+    } else if (name === "list_repo_files") {
+      const res = await fetch(
+        `https://api.github.com/repos/${args?.owner}/${args?.repo}/git/trees/HEAD?recursive=1`,
+        { headers: githubHeaders(), signal: AbortSignal.timeout(10_000) },
+      );
+      if (!res.ok) {
+        response = { error: `GitHub returned ${res.status} listing ${args?.owner}/${args?.repo}` };
+      } else {
+        const tree: { path: string; type: string }[] = (await res.json()).tree ?? [];
+        const files = tree
+          .filter(f => f.type === "blob" && !IGNORED_PATH.test(f.path))
+          .map(f => f.path);
+        response = files.length > MAX_LISTED_FILES
+          ? { files: files.slice(0, MAX_LISTED_FILES), truncated: true, total: files.length }
+          : { files };
+      }
     } else {
       response = { error: `Unknown tool: ${name}` };
     }
   } catch (err) {
-    response = { error: `fetch_file failed: ${err instanceof Error ? err.message : String(err)}` };
+    response = { error: `${name} failed: ${err instanceof Error ? err.message : String(err)}` };
   }
 
   return { functionResponse: { id: call.id, name, response } };
 }
 
-export async function analyseRepo(repo: string): Promise<string> {
-  const tools = [{
-    functionDeclarations: [{
+const repoParams = {
+  type: Type.OBJECT,
+  properties: {
+    owner: { type: Type.STRING },
+    repo: { type: Type.STRING },
+  },
+  required: ["owner", "repo"],
+};
+
+const tools = [{
+  functionDeclarations: [
+    {
+      name: "list_repo_files",
+      description: "List the file paths in a GitHub repository (lockfiles, binaries and build folders are left out)",
+      parameters: repoParams,
+    },
+    {
       name: "fetch_file",
       description: "Fetch a file from a GitHub repository",
       parameters: {
-        type: Type.OBJECT,
-        properties: {
-          owner: { type: Type.STRING },
-          repo: { type: Type.STRING },
-          path: { type: Type.STRING }
-        },
-        required: ["owner", "repo", "path"]
-      }
-    }]
-  }]
+        ...repoParams,
+        properties: { ...repoParams.properties, path: { type: Type.STRING } },
+        required: ["owner", "repo", "path"],
+      },
+    },
+  ],
+}];
 
+export function analyseRepo(repo: string): Promise<string> {
+  return runAgent(`Analyse this repo: ${repo}`, REPO_INSTRUCTION);
+}
+
+export async function analyseProfile(user: string): Promise<string> {
+  const data = await fetchProfileData(user);
+  return runAgent(
+    `Analyse the GitHub user "${user}" using this data:\n\n${data}`,
+    PROFILE_INSTRUCTION,
+  );
+}
+
+async function runAgent(prompt: string, systemInstruction: string): Promise<string> {
   const messages: Content[] = [{
     role: "user",
-    parts: [{ text: `Analyse this repo: ${repo}` }]
+    parts: [{ text: prompt }]
   }]
 
   for (let step = 0; step < MAX_STEPS; step++) {
@@ -148,7 +195,7 @@ export async function analyseRepo(repo: string): Promise<string> {
         response = await getClient().models.generateContent({
           model: MODEL,
           contents: messages,
-          config: { tools, systemInstruction: SYSTEM_INSTRUCTION },
+          config: { tools, systemInstruction },
           
         });
         break;
@@ -178,7 +225,7 @@ export async function analyseRepo(repo: string): Promise<string> {
     else {
       const finalAnswer = response.text;
       if (!finalAnswer) {
-        throw new AnalysisError(`Gemini finished wit      hout an answer (${candidate.finishReason ?? "unknown reason"})`, 502);
+        throw new AnalysisError(`Gemini finished without an answer (${candidate.finishReason ?? "unknown reason"})`, 502);
       }
       return finalAnswer;
     }

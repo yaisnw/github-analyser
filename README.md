@@ -12,6 +12,16 @@ An AI agent that reads a GitHub repository and writes a plain-text analysis of i
 4. The loop ends when Gemini answers, or after 10 steps.
 5. The analysis is returned as plain text and shown on the page.
 
+### Profile analysis
+
+Paste a profile URL such as `https://github.com/username` instead of a repo and the app takes a second path:
+
+1. Code (not the model) gathers the user's profile, about-me README, language mix, orgs and repos. With a `GITHUB_TOKEN` it also gets pinned repos and contribution totals (GitHub's GraphQL API needs a token).
+2. That data goes to Gemini in the first message, so no model steps are spent fetching it.
+3. The agent can use `list_repo_files` and `fetch_file` to look closer at up to 3 of their repos, then writes an analysis of what kind of developer they are.
+
+Organisation URLs are rejected. Both paths share the same agent loop, and the agent can also use `list_repo_files` for repo analysis.
+
 ### Built to run on the free tier
 
 - **Request spacing:** Gemini calls are spaced at least 12 seconds apart to stay under the free tier's 5 requests per minute. An analysis can take a minute or two as a result.
@@ -49,7 +59,7 @@ Fill in `.env.local`:
 |---|---|---|
 | `GEMINI_API_KEY` | Yes | Your Gemini API key. |
 | `GEMINI_MODEL` | No | The Gemini model to use. Defaults to `gemini-flash-lite-latest`. |
-| `GITHUB_TOKEN` | No | Raises GitHub's API limit from 60 to 5,000 requests per hour. A fine-grained token with read-only access to public repositories is enough. |
+| `GITHUB_TOKEN` | No | Raises GitHub's API limit from 60 to 5,000 requests per hour, and enables pinned repos and contribution totals for profile analysis. A fine-grained token with read-only access to public repositories is enough. |
 
 Then start the dev server:
 

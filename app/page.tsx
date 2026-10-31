@@ -1,10 +1,10 @@
 import AnalyserForm from "@/components/AnalyserForm";
 
 const steps = [
-  "You paste the URL of a public GitHub repo.",
+  "You paste the URL of a public GitHub repo or a GitHub profile.",
   "An AI agent powered by Google Gemini decides which files to read, such as the README, package files and source code.",
   "It fetches those files from the GitHub API, reads them, and asks for more until it understands the project.",
-  "It writes a plain-text analysis covering what the project does, how it's built, and anything notable.",
+  "For a repo, it writes a plain-text analysis of what the project does and how it's built. For a profile, it reads their bio, README, repos and contributions and describes what kind of developer they are.",
 ];
 
 const socials = [
@@ -20,7 +20,7 @@ export default function Home() {
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold">GitHub Analyser</h1>
         <p className="text-sm text-muted">
-          Paste a GitHub repo URL to get an analysis.
+          Paste a GitHub repo or profile URL to get an analysis.
         </p>
       </header>
 

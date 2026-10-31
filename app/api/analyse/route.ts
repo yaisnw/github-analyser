@@ -1,20 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchRepo, parseRepoUrl } from "@/lib/github";
-import { AnalysisError, analyseRepo } from "@/lib/gemini";
+import { parseGithubUrl } from "@/lib/github";
+import { AnalysisError } from "@/lib/errors";
+import { analyseProfile, analyseRepo } from "@/lib/gemini";
 
 export async function POST(request: NextRequest) {
   const { url } = await request.json().catch(() => ({}));
 
-  const repo = typeof url === "string" ? parseRepoUrl(url) : null;
-  if (!repo) {
+  const target = typeof url === "string" ? parseGithubUrl(url) : null;
+  if (!target) {
     return NextResponse.json(
-      { error: "Enter a valid GitHub repo URL" },
+      { error: "Enter a valid GitHub repo or profile URL" },
       { status: 400 },
     );
   }
 
   try {
-    const result = await analyseRepo(url);
+    const result =
+      target.kind === "repo"
+        ? await analyseRepo(target.repo)
+        : await analyseProfile(target.user);
     return NextResponse.json({ result });
   } catch (err) {
     if (err instanceof AnalysisError) {
